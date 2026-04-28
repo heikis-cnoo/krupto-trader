@@ -22,7 +22,10 @@ else:
 
 COINGECKO_API_KEY = os.environ.get("COINGECKO_API_KEY", "CG-4Bsct34qk7h5cjj5JRuSzvuJ")
 TELEGRAM_TOKEN    = os.environ.get("TELEGRAM_TOKEN",    "8610980001:AAFpSLvBGQmqKjW2UNpnB43vA0ZrzkRzLdE")
-TELEGRAM_CHAT_ID  = os.environ.get("TELEGRAM_CHAT_ID",  "1665605995")
+TELEGRAM_CHAT_IDS = [
+    os.environ.get("TELEGRAM_CHAT_ID", "1665605995"),  # isiklik
+    "-5103881140",                                       # grupp Cnoo
+]
 
 COINS = {
     "XRP": "ripple",
@@ -322,6 +325,9 @@ def analyze_coin(symbol: str, coin_id: str) -> dict | None:
         elif "OOTA" in sig["action"]:
             print(f"\n  {Fore.CYAN}>>> Hoia praegune positsioon. Käivita analüüs uuesti 2-4h parast.{Style.RESET_ALL}")
 
+        sig["rsi"]    = f"{ind['rsi_now']:.1f}"
+        sig["price"]  = price_eur
+        sig["change"] = change_24h
         print()
         return sig
     except Exception as e:
@@ -330,9 +336,10 @@ def analyze_coin(symbol: str, coin_id: str) -> dict | None:
         return None
 
 
-def send_telegram(all_results: list) -> None:
+def send_telegram(all_results: list, prices: dict) -> None:
     now = datetime.now().strftime("%d.%m.%Y %H:%M")
-    lines = [f"*Krupto signaalid* — {now}\n"]
+    lines = [f"📊 *KRUPTO SIGNAALID* — {now}"]
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━\n")
 
     for symbol, sig in all_results:
         action = sig["action"]
@@ -340,39 +347,64 @@ def send_telegram(all_results: list) -> None:
             icon = "🟢🟢"
         elif "VALMIS OSTMA" in action:
             icon = "🟢"
-        elif "MÜÜA" in action and "TUGEV" in action or "STABLECOIN" in action:
+        elif "STABLECOIN" in action:
             icon = "🔴🔴"
         elif "VALMIS MÜÜMA" in action:
             icon = "🔴"
         else:
             icon = "⚪"
 
-        lines.append(f"{icon} *{symbol}*: {action}")
-        lines.append(f"   Osta: {sig['buy']} | Müüa: {sig['sell']}")
-        top_reason = sig["reasons"][0] if sig["reasons"] else ""
-        lines.append(f"   _{top_reason}_\n")
+        price_eur, change_24h = prices.get(symbol, (0, 0))
+        change_icon = "📈" if change_24h >= 0 else "📉"
+
+        lines.append(f"{icon} *{symbol}* — {price_eur:.4f} EUR {change_icon} {change_24h:+.2f}%")
+        lines.append(f"*{action}*")
+        lines.append(f"Osta signaal: {sig['buy']} | Müüa signaal: {sig['sell']}")
+        lines.append(f"RSI: {sig.get('rsi', '—')}")
+        lines.append("")
+        lines.append("Signaalid:")
+        for r in sig["reasons"]:
+            lines.append(f"  • {r}")
+
+        if "MÜÜA" in action:
+            lines.append("\n⚠️ _Liigu USDT/USDC-sse Bybit EU-s._")
+            lines.append("_Oota põhja enne tagasiostmist._")
+        elif "OSTA" in action:
+            lines.append("\n✅ _Hea sisenemine._")
+            lines.append("_Osta osade kaupa (DCA strateegia)._")
+        else:
+            lines.append("\n⏸ _Hoia positsioon. Oota selget signaali._")
+
+        lines.append("\n━━━━━━━━━━━━━━━━━━━━━━")
 
     buys  = [(s, r) for s, r in all_results if r["buy"] >= 2 and r["buy"] > r["sell"]]
     sells = [(s, r) for s, r in all_results if r["sell"] >= 2 and r["sell"] > r["buy"]]
 
+    lines.append("")
     if buys:
-        lines.append("*Tegevus: OSTA* osade kaupa (DCA)")
+        lines.append("*KOKKUVÕTE: OSTA* 💰")
+        for sym, res in buys:
+            lines.append(f"  🟢 {sym}: {res['action']}")
     elif sells:
-        lines.append("*Tegevus: MÜÜA* → liigu USDT/USDC-sse")
+        lines.append("*KOKKUVÕTE: MÜÜA* ⚠️")
+        for sym, res in sells:
+            lines.append(f"  🔴 {sym}: {res['action']}")
     else:
-        lines.append("*Tegevus: OOTA* — pole selget signaali")
+        lines.append("*KOKKUVÕTE: OOTA* ⏸")
+        lines.append("Pole selget signaali — hoia positsioon.")
 
     text = "\n".join(lines)
-    url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    resp = requests.post(url, json={
-        "chat_id":    TELEGRAM_CHAT_ID,
-        "text":       text,
-        "parse_mode": "Markdown",
-    }, timeout=10)
-    if resp.ok:
-        print(f"{Fore.GREEN}Telegram sõnum saadetud!{Style.RESET_ALL}")
-    else:
-        print(f"{Fore.RED}Telegrami viga: {resp.text}{Style.RESET_ALL}")
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    for chat_id in TELEGRAM_CHAT_IDS:
+        resp = requests.post(url, json={
+            "chat_id":    chat_id,
+            "text":       text,
+            "parse_mode": "Markdown",
+        }, timeout=10)
+        if resp.ok:
+            print(f"{Fore.GREEN}Telegram saadetud → {chat_id}{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.RED}Telegrami viga ({chat_id}): {resp.text}{Style.RESET_ALL}")
 
 
 def trending_picks(all_results: list) -> None:
@@ -419,7 +451,8 @@ def main():
 
     trending_picks(all_results)
     if all_results:
-        send_telegram(all_results)
+        prices = {sym: (sig["price"], sig["change"]) for sym, sig in all_results}
+        send_telegram(all_results, prices)
 
 
 if __name__ == "__main__":
