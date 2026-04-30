@@ -1,11 +1,11 @@
 {
-  "status": "waiting",
-  "buy_price_eur": 1.17,
+  "status": "holding",
+  "buy_price_eur": 1.18,
   "buy_amount_eur": 100.0,
-  "xrp_amount": 85.47008547008548,
-  "buy_date": "30.04.2026 10:40",
-  "sell_price_eur": 1.17,
-  "sell_date": "30.04.2026 07:50",
-  "profit_eur": 0.0,
-  "profit_pct": 0.0
+  "xrp_amount": 84.74576271186442,
+  "buy_date": "30.04.2026 10:51",
+  "sell_price_eur": null,
+  "sell_date": null,
+  "profit_eur": null,
+  "profit_pct": null
 }
