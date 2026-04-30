@@ -29,17 +29,8 @@ TELEGRAM_CHAT_IDS = [
     os.environ.get("TELEGRAM_CHAT_ID", "1665605995"),  # isiklik
 ]
 
-COINS = {
-    "XRP": "ripple",
-    "ADA": "cardano",
-    "SOL": "solana",
-}
-
-STABLECOINS = ["USDT", "USDC", "EURC"]
-
-PORTFOLIO = {
-    "XRP": {"amount": None, "buy_price_eur": None},
-}
+COIN_ID = "ripple"
+COIN_SYMBOL = "XRP"
 
 
 HEADERS = {"x-cg-demo-api-key": COINGECKO_API_KEY}
@@ -288,13 +279,6 @@ def print_header():
     print(f"{'='*60}{Style.RESET_ALL}\n")
 
 
-def print_stablecoin_note():
-    coins = ", ".join(STABLECOINS)
-    print(f"{Fore.WHITE}STABLECOINID (turvasadam): {coins}")
-    print(f"   Bybit EU-s saad XRP muua ja hoida USDT/USDC-s kuni")
-    print(f"   jargmise ostuvõimaluseni.\n")
-
-
 def analyze_coin(symbol: str, coin_id: str) -> dict | None:
     print(f"{Fore.WHITE + Style.BRIGHT}--- {symbol} ---")
     try:
@@ -338,84 +322,83 @@ def analyze_coin(symbol: str, coin_id: str) -> dict | None:
         return None
 
 
+POSITION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "position.json")
+
 def read_position() -> dict:
     import json
-    if os.path.exists("position.json"):
-        with open("position.json", encoding="utf-8") as f:
+    if os.path.exists(POSITION_FILE):
+        with open(POSITION_FILE, encoding="utf-8") as f:
             return json.load(f)
     return {"status": "waiting"}
 
 
-def send_telegram(all_results: list, prices: dict) -> None:
+def send_telegram(sig: dict, price_eur: float, change_24h: float) -> None:
     pos = read_position()
     now = now_eesti("%d.%m.%Y %H:%M")
-
-    # XRP on ainus münt mida jälgime positsiooni jaoks
-    xrp_sig   = next((s for sym, s in all_results if sym == "XRP"), None)
-    xrp_price = prices.get("XRP", (0, 0))[0]
-    xrp_change= prices.get("XRP", (0, 0))[1]
 
     lines = [f"*XRP TRADER* — {now}", "━━━━━━━━━━━━━━━━━━━━━━\n"]
 
     # --- POSITSIOON AVATUD: otsime müügihetke ---
     if pos["status"] == "holding":
-        current_value = pos["xrp_amount"] * xrp_price
+        current_value = pos["xrp_amount"] * price_eur
         profit_eur    = current_value - pos["buy_amount_eur"]
         profit_pct    = (profit_eur / pos["buy_amount_eur"]) * 100
-        profit_icon   = "📈" if profit_eur >= 0 else "📉"
+        profit_icon   = "+" if profit_eur >= 0 else "-"
 
         lines.append("*AVATUD POSITSIOON*")
         lines.append(f"Ostetud: {pos['xrp_amount']:.2f} XRP @ {pos['buy_price_eur']:.4f} EUR")
-        lines.append(f"Ostetud: {pos['buy_date']}")
-        lines.append(f"Praegune hind: *{xrp_price:.4f} EUR*")
+        lines.append(f"Kuupäev: {pos['buy_date']}")
+        lines.append(f"Praegune hind: *{price_eur:.4f} EUR*")
         lines.append(f"Väärtus: {current_value:.2f} EUR")
-        lines.append(f"{profit_icon} *{profit_eur:+.2f} EUR ({profit_pct:+.1f}%)*")
+        lines.append(f"*{profit_icon}{abs(profit_eur):.2f} EUR ({profit_icon}{abs(profit_pct):.1f}%)*")
         lines.append("\n━━━━━━━━━━━━━━━━━━━━━━")
 
-        if xrp_sig:
-            sell = xrp_sig["sell"]
-            buy  = xrp_sig["buy"]
-            lines.append(f"\nMüüa signaal: *{sell}* | Osta signaal: {buy}")
-            lines.append(f"RSI: {xrp_sig.get('rsi', '—')}")
-            lines.append("")
-            for r in xrp_sig["reasons"]:
-                if "MÜÜA" in r:
-                    lines.append(f"  • {r}")
+        sell = sig["sell"]
+        buy  = sig["buy"]
+        lines.append(f"\nMüüa signaal: *{sell}* | Osta signaal: {buy}")
+        lines.append(f"RSI: {sig.get('rsi', '—')} | 24h: {change_24h:+.2f}%")
+        lines.append("")
 
-            if sell >= 4 and sell > buy:
-                lines.append("\n*MÜÜA KOHE!*")
-                lines.append("Mine Bybit → müü XRP → seejärel GitHub Actions → Kauple XRP → Myy")
-            elif sell >= 2 and sell > buy:
-                lines.append("\nMüügisignaal kasvab — ole valmis müüma.")
-            else:
-                lines.append("\nHoia positsioon — müügisignaali pole.")
+        sell_reasons = [r for r in sig["reasons"] if "MÜÜA" in r]
+        for r in sell_reasons:
+            lines.append(f"  • {r}")
+
+        if sell >= 4 and sell > buy:
+            lines.append("\n*MÜÜA KOHE!*")
+            lines.append("_Mine Bybit → müü XRP_")
+            lines.append("_Seejärel nupp.pyw → MÜÜA_")
+        elif sell >= 2 and sell > buy:
+            lines.append("\nMüügisignaal kasvab — ole valmis müüma.")
+        else:
+            lines.append("\nHoia positsioon — müügisignaali pole.")
 
     # --- POSITSIOON SULETUD: otsime ostuhetke ---
     else:
-        change_icon = "📈" if xrp_change >= 0 else "📉"
-        lines.append(f"*XRP hind: {xrp_price:.4f} EUR* {change_icon} {xrp_change:+.2f}%")
+        change_icon = "+" if change_24h >= 0 else ""
+        lines.append(f"*XRP: {price_eur:.4f} EUR* ({change_icon}{change_24h:.2f}% 24h)")
         lines.append("\n━━━━━━━━━━━━━━━━━━━━━━")
         lines.append("*Ootan ostuhetke...*\n")
 
-        if xrp_sig:
-            buy  = xrp_sig["buy"]
-            sell = xrp_sig["sell"]
-            lines.append(f"Osta signaal: *{buy}* | Müüa signaal: {sell}")
-            lines.append(f"RSI: {xrp_sig.get('rsi', '—')}")
-            lines.append("")
-            for r in xrp_sig["reasons"]:
-                lines.append(f"  • {r}")
+        buy  = sig["buy"]
+        sell = sig["sell"]
+        lines.append(f"Osta signaal: *{buy}* | Müüa signaal: {sell}")
+        lines.append(f"RSI: {sig.get('rsi', '—')}")
+        lines.append("")
 
-            if buy >= 4 and buy > sell:
-                lines.append("\n*OSTA KOHE!*")
-                lines.append("Mine Bybit → osta XRP → seejärel GitHub Actions → Kauple XRP → Osta")
-            elif buy >= 2 and buy > sell:
-                lines.append("\nOstuhetk läheneb — jälgi kinnitust.")
-            else:
-                lines.append("\nPole veel selget ostuhetke — oota.")
+        for r in sig["reasons"]:
+            lines.append(f"  • {r}")
+
+        if buy >= 4 and buy > sell:
+            lines.append("\n*OSTA KOHE!*")
+            lines.append("_Mine Bybit → osta XRP_")
+            lines.append("_Seejärel nupp.pyw → OSTA_")
+        elif buy >= 2 and buy > sell:
+            lines.append("\nOstuhetk läheneb — jälgi kinnitust.")
+        else:
+            lines.append("\nPole veel selget ostuhetke — oota.")
 
         if pos.get("sell_date"):
-            lines.append(f"\n_Eelmine müük: {pos['sell_date']} | {pos.get('profit_eur', 0):+.2f} EUR ({pos.get('profit_pct', 0):+.1f}%)_")
+            lines.append(f"\n_Eelmine tehing: {pos['sell_date']} | {pos.get('profit_eur', 0):+.2f} EUR ({pos.get('profit_pct', 0):+.1f}%)_")
 
     text = "\n".join(lines)
     url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -426,57 +409,34 @@ def send_telegram(all_results: list, prices: dict) -> None:
             "parse_mode": "Markdown",
         }, timeout=10)
         if resp.ok:
-            print(f"{Fore.GREEN}Telegram saadetud → {chat_id}{Style.RESET_ALL}")
+            print(f"Telegram saadetud → {chat_id}")
         else:
-            print(f"{Fore.RED}Telegrami viga ({chat_id}): {resp.text}{Style.RESET_ALL}")
-
-
-def trending_picks(all_results: list) -> None:
-    """Näita kõige paremaid ostusoovitusi praegu."""
-    buys = [(s, r) for s, r in all_results if r["buy"] >= 2 and r["buy"] > r["sell"]]
-    buys.sort(key=lambda x: x[1]["buy"], reverse=True)
-
-    print(f"{Fore.CYAN + Style.BRIGHT}{'='*60}")
-    print(f"  PROFESSIONAALSE TREJDERI KOKKUVÕTE")
-    print(f"{'='*60}{Style.RESET_ALL}")
-
-    if buys:
-        print(f"\n{Fore.GREEN}Parimad ostusoovitused praegu:{Style.RESET_ALL}")
-        for sym, res in buys:
-            print(f"  {res['emoji']} {sym}: {res['action']} (osta:{res['buy']} müüa:{res['sell']})")
-    else:
-        print(f"\n{Fore.YELLOW}Praegu pole selget ostuhetke — oota signaali.{Style.RESET_ALL}")
-
-    sells = [(s, r) for s, r in all_results if r["sell"] >= 2 and r["sell"] > r["buy"]]
-    if sells:
-        print(f"\n{Fore.RED}Müügisoovitused — liigu stablecoini:{Style.RESET_ALL}")
-        for sym, res in sells:
-            print(f"  {res['emoji']} {sym}: {res['action']}")
-
-    print(f"\n{Fore.WHITE}Strateegia meeldetuletus:{Style.RESET_ALL}")
-    print("  • DCA (Dollar Cost Averaging) — osta väikeste osadena")
-    print("  • Müügi korral liigu USDT/USDC peale Bybit EU-s")
-    print("  • Ära pane kõike ühe mündi peale")
-    print("  • Stop-loss: kaalu müüki kui -15% positsioonist")
-    print()
+            print(f"Telegrami viga ({chat_id}): {resp.text}")
 
 
 def main():
     print_header()
-    print_stablecoin_note()
 
-    all_results = []
+    print(f"Analüüsin XRP...")
+    price_data = get_price(COIN_ID)
+    price_eur  = price_data.get("eur", 0)
+    change_24h = price_data.get("eur_24h_change", 0)
 
-    for symbol, coin_id in COINS.items():
-        sig = analyze_coin(symbol, coin_id)
-        if sig:
-            all_results.append((symbol, sig))
-        time.sleep(3)  # Demo API: 30 req/min, lühike paus piisab
+    df  = get_ohlc(COIN_ID, days=30)
+    ind = calculate_indicators(df)
+    sig = generate_signal(ind, change_24h)
 
-    trending_picks(all_results)
-    if all_results:
-        prices = {sym: (sig["price"], sig["change"]) for sym, sig in all_results}
-        send_telegram(all_results, prices)
+    sig["rsi"]    = f"{ind['rsi_now']:.1f}"
+    sig["price"]  = price_eur
+    sig["change"] = change_24h
+
+    print(f"XRP: {price_eur:.4f} EUR | 24h: {change_24h:+.2f}%")
+    print(f"RSI: {ind['rsi_now']:.1f} | Osta: {sig['buy']} | Müüa: {sig['sell']}")
+    print(f"Signaal: {sig['action']}")
+    for r in sig["reasons"]:
+        print(f"  {r}")
+
+    send_telegram(sig, price_eur, change_24h)
 
 
 if __name__ == "__main__":
