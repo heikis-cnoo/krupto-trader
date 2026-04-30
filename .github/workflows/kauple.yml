@@ -45,6 +45,6 @@ jobs:
         run: |
           git config user.email "trader@github.com"
           git config user.name "XRP Trader Bot"
-          git add position.json
+          git add susteem/position.json
           git diff --staged --quiet || git commit -m "Positsioon: ${{ inputs.tegevus }} ${{ inputs.summa_eur }} EUR"
           git push
