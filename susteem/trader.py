@@ -9,7 +9,10 @@ import pandas as pd
 import ta
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+def now_eesti(fmt="%d.%m.%Y %H:%M:%S"):
+    return (datetime.now(timezone.utc) + timedelta(hours=3)).strftime(fmt)
 from colorama import Fore, Style, init
 
 # GitHub Actions keskkonnas värvid ei tööta - lülita välja
@@ -281,7 +284,7 @@ def generate_signal(ind: dict, change_24h: float) -> dict:
 def print_header():
     print(f"\n{Fore.CYAN + Style.BRIGHT}{'='*60}")
     print(f"  KRÜPTO TRADING SIGNAALIDE SÜSTEEM")
-    print(f"  {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
+    print(f"  {now_eesti()}")
     print(f"{'='*60}{Style.RESET_ALL}\n")
 
 
@@ -345,7 +348,7 @@ def read_position() -> dict:
 
 def send_telegram(all_results: list, prices: dict) -> None:
     pos = read_position()
-    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    now = now_eesti("%d.%m.%Y %H:%M")
 
     # XRP on ainus münt mida jälgime positsiooni jaoks
     xrp_sig   = next((s for sym, s in all_results if sym == "XRP"), None)
