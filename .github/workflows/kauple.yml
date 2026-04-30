@@ -39,7 +39,7 @@ jobs:
           TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
           CI: true
-        run: python kauple.py ${{ inputs.tegevus }} ${{ inputs.summa_eur }}
+        run: python susteem/kauple.py ${{ inputs.tegevus }} ${{ inputs.summa_eur }}
 
       - name: Salvesta positsioon reposse
         run: |
