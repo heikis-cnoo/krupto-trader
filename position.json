@@ -1,0 +1,11 @@
+{
+  "status": "waiting",
+  "buy_price_eur": null,
+  "buy_amount_eur": null,
+  "xrp_amount": null,
+  "buy_date": null,
+  "sell_price_eur": null,
+  "sell_date": null,
+  "profit_eur": null,
+  "profit_pct": null
+}
