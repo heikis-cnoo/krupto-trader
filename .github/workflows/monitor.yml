@@ -1,0 +1,38 @@
+name: Monitor XRP Positsioon
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # iga 15 minuti järel
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Kontrolli positsiooni staatust
+        id: check
+        run: |
+          STATUS=$(python3 -c "import json; d=json.load(open('susteem/position.json')); print(d.get('status','waiting'))")
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "Positsioon: $STATUS"
+
+      - uses: actions/setup-python@v5
+        if: steps.check.outputs.status == 'holding'
+        with:
+          python-version: '3.12'
+
+      - name: Installi paketid
+        if: steps.check.outputs.status == 'holding'
+        run: pip install -r susteem/requirements.txt
+
+      - name: Kontrolli müügisignaali
+        if: steps.check.outputs.status == 'holding'
+        env:
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
+          CI: true
+        run: python susteem/monitor.py
