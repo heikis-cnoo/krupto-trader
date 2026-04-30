@@ -13,6 +13,8 @@ from trader import TELEGRAM_TOKEN, TELEGRAM_CHAT_IDS, COINGECKO_API_KEY
 
 POSITION_FILE    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "position.json")
 ALERT_THRESHOLD  = 3  # saada hoiatus kui müüa skoor >= 3
+STOP_LOSS_PCT    = -10.0  # stop-loss hoiatus kui kahjum >= 10%
+TAKE_PROFIT_PCT  =  20.0  # take-profit hoiatus kui kasum >= 20%
 
 def now_eesti():
     return (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M")
@@ -55,26 +57,65 @@ def main():
 
     print(f"XRP: {price_eur:.4f} EUR | Müüa: {sell} | Osta: {buy} | P&L: {sign}{profit_eur:.2f} EUR")
 
+    alerted = False
+
+    # --- STOP-LOSS hoiatus ---
+    if profit_pct <= STOP_LOSS_PCT:
+        alert = (
+            f"🛑 *STOP-LOSS HOIATUS — {now_eesti()}*\n\n"
+            f"💵 XRP hind: *{price_eur:.4f} EUR*\n\n"
+            f"📂 Sinu positsioon:\n"
+            f"  {pos['xrp_amount']:.2f} XRP @ {pos['buy_price_eur']:.4f} EUR\n"
+            f"  Praegune väärtus: {current_value:.2f} EUR\n"
+            f"  📉 *{sign}{profit_eur:.2f} EUR ({sign}{profit_pct:.1f}%)*\n\n"
+            f"⚠️ Kahjum on jõudnud {STOP_LOSS_PCT:.0f}% piirini!\n\n"
+            f"*Kaalu müüki kahjumi piiramiseks.*\n"
+            f"_Mine Bybit → müü XRP → nupp.pyw → MÜÜA_"
+        )
+        send_alert(alert)
+        print(f"Stop-loss hoiatus saadetud! P&L: {profit_pct:.1f}%")
+        alerted = True
+
+    # --- TAKE-PROFIT hoiatus ---
+    elif profit_pct >= TAKE_PROFIT_PCT:
+        alert = (
+            f"🎯 *TAKE-PROFIT HOIATUS — {now_eesti()}*\n\n"
+            f"💵 XRP hind: *{price_eur:.4f} EUR*\n\n"
+            f"📂 Sinu positsioon:\n"
+            f"  {pos['xrp_amount']:.2f} XRP @ {pos['buy_price_eur']:.4f} EUR\n"
+            f"  Praegune väärtus: {current_value:.2f} EUR\n"
+            f"  📈 *{sign}{profit_eur:.2f} EUR ({sign}{profit_pct:.1f}%)*\n\n"
+            f"✨ Kasum on jõudnud +{TAKE_PROFIT_PCT:.0f}%!\n\n"
+            f"*Kaalugi kasumi lukustamist.*\n"
+            f"_Mine Bybit → müü XRP → nupp.pyw → MÜÜA_"
+        )
+        send_alert(alert)
+        print(f"Take-profit hoiatus saadetud! P&L: {profit_pct:.1f}%")
+        alerted = True
+
+    # --- MÜÜGISIGNAAL hoiatus ---
     if sell >= ALERT_THRESHOLD and sell > buy:
         sell_reasons = [r for r in sig["reasons"] if "MÜÜA" in r]
         reasons_text = "\n".join(f"  • {r}" for r in sell_reasons)
 
         alert = (
-            f"*MUUGIHOIATUS — {now_eesti()}*\n\n"
-            f"XRP hind: *{price_eur:.4f} EUR*\n"
-            f"Muua signaal: *{sell}* | Osta: {buy}\n\n"
-            f"Sinu positsioon:\n"
-            f"  {pos['xrp_amount']:.2f} XRP ostetud @ {pos['buy_price_eur']:.4f} EUR\n"
-            f"  Praegune vaartus: {current_value:.2f} EUR\n"
+            f"🚨 *MÜÜGIHOIATUS — {now_eesti()}*\n\n"
+            f"💵 XRP hind: *{price_eur:.4f} EUR*\n"
+            f"📊 Müüa signaal: *{sell}* | Osta: {buy}\n\n"
+            f"📂 Sinu positsioon:\n"
+            f"  {pos['xrp_amount']:.2f} XRP @ {pos['buy_price_eur']:.4f} EUR\n"
+            f"  Praegune väärtus: {current_value:.2f} EUR\n"
             f"  *{sign}{profit_eur:.2f} EUR ({sign}{profit_pct:.1f}%)*\n\n"
-            f"Signaalid:\n{reasons_text}\n\n"
-            f"*Mine Bybit → muua XRP kohe!*\n"
-            f"_Seejärel vajuta nupp.pyw → MUUA_"
+            f"📉 Signaalid:\n{reasons_text}\n\n"
+            f"*Mine Bybit → müü XRP kohe!*\n"
+            f"_Seejärel vajuta nupp.pyw → MÜÜA_"
         )
         send_alert(alert)
-        print(f"Hoiatus saadetud! Müüa skoor: {sell}")
-    else:
-        print(f"Pole piisavat müügisignaali (sell:{sell} buy:{buy}) — jätkan jälgimist.")
+        print(f"Müügihoiatus saadetud! Müüa skoor: {sell}")
+        alerted = True
+
+    if not alerted:
+        print(f"Pole hoiatusi (sell:{sell} buy:{buy} P&L:{profit_pct:.1f}%) — jätkan jälgimist.")
 
 if __name__ == "__main__":
     main()
