@@ -1,0 +1,50 @@
+name: Kauple XRP
+
+on:
+  workflow_dispatch:
+    inputs:
+      tegevus:
+        description: 'Tegevus'
+        required: true
+        type: choice
+        options:
+          - osta
+          - myy
+      summa_eur:
+        description: 'Summa EUR (ainult ostmisel, nt 100)'
+        required: false
+        default: '100'
+
+permissions:
+  contents: write
+
+jobs:
+  kauple:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Installi paketid
+        run: pip install requests
+
+      - name: Kaivita tegevus
+        env:
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
+          CI: true
+        run: python kauple.py ${{ inputs.tegevus }} ${{ inputs.summa_eur }}
+
+      - name: Salvesta positsioon reposse
+        run: |
+          git config user.email "trader@github.com"
+          git config user.name "XRP Trader Bot"
+          git add position.json
+          git diff --staged --quiet || git commit -m "Positsioon: ${{ inputs.tegevus }} ${{ inputs.summa_eur }} EUR"
+          git push
