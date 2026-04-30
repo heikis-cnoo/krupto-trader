@@ -130,7 +130,7 @@ def action_sell():
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Kasutus: python kauple.py osta [summa] | myy")
+        print("Kasutus: python susteem/kauple.py osta [summa] | myy")
         sys.exit(1)
 
     tegevus = sys.argv[1].lower()
