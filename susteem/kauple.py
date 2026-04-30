@@ -7,7 +7,10 @@ import json
 import os
 import sys
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+def now_eesti():
+    return (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M")
 
 TELEGRAM_TOKEN    = os.environ.get("TELEGRAM_TOKEN",    "8610980001:AAFpSLvBGQmqKjW2UNpnB43vA0ZrzkRzLdE")
 TELEGRAM_CHAT_IDS = [
@@ -71,7 +74,7 @@ def action_buy(amount_eur: float):
 
     price, change = get_xrp_price()
     xrp_amount    = amount_eur / price
-    now           = datetime.now().strftime("%d.%m.%Y %H:%M")
+    now           = now_eesti()
 
     pos = default_position()
     pos["status"]        = "holding"
@@ -130,7 +133,7 @@ def action_sell():
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Kasutus: python susteem/kauple.py osta [summa] | myy")
+        print("Kasutus: python kauple.py osta [summa] | myy")
         sys.exit(1)
 
     tegevus = sys.argv[1].lower()
