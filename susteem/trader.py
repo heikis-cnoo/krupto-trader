@@ -336,27 +336,29 @@ def send_telegram(sig: dict, price_eur: float, change_24h: float) -> None:
     pos = read_position()
     now = now_eesti("%d.%m.%Y %H:%M")
 
-    lines = [f"*XRP TRADER* — {now}", "━━━━━━━━━━━━━━━━━━━━━━\n"]
+    change_arrow = "📈" if change_24h >= 0 else "📉"
+
+    lines = [f"🪙 *XRP TRADER* — {now}", "━━━━━━━━━━━━━━━━━━━━━━\n"]
 
     # --- POSITSIOON AVATUD: otsime müügihetke ---
     if pos["status"] == "holding":
         current_value = pos["xrp_amount"] * price_eur
         profit_eur    = current_value - pos["buy_amount_eur"]
         profit_pct    = (profit_eur / pos["buy_amount_eur"]) * 100
-        profit_icon   = "+" if profit_eur >= 0 else "-"
+        profit_icon   = "📈" if profit_eur >= 0 else "📉"
 
-        lines.append("*AVATUD POSITSIOON*")
-        lines.append(f"Ostetud: {pos['xrp_amount']:.2f} XRP @ {pos['buy_price_eur']:.4f} EUR")
-        lines.append(f"Kuupäev: {pos['buy_date']}")
-        lines.append(f"Praegune hind: *{price_eur:.4f} EUR*")
-        lines.append(f"Väärtus: {current_value:.2f} EUR")
-        lines.append(f"*{profit_icon}{abs(profit_eur):.2f} EUR ({profit_icon}{abs(profit_pct):.1f}%)*")
+        lines.append("📂 *AVATUD POSITSIOON*")
+        lines.append(f"💰 Ostetud: {pos['xrp_amount']:.2f} XRP @ {pos['buy_price_eur']:.4f} EUR")
+        lines.append(f"📅 Kuupäev: {pos['buy_date']}")
+        lines.append(f"💵 Praegune hind: *{price_eur:.4f} EUR* {change_arrow} {change_24h:+.2f}%")
+        lines.append(f"💼 Väärtus: {current_value:.2f} EUR")
+        lines.append(f"{profit_icon} *{profit_eur:+.2f} EUR ({profit_pct:+.1f}%)*")
         lines.append("\n━━━━━━━━━━━━━━━━━━━━━━")
 
         sell = sig["sell"]
         buy  = sig["buy"]
-        lines.append(f"\nMüüa signaal: *{sell}* | Osta signaal: {buy}")
-        lines.append(f"RSI: {sig.get('rsi', '—')} | 24h: {change_24h:+.2f}%")
+        lines.append(f"\n📊 Müüa signaal: *{sell}* | Osta signaal: {buy}")
+        lines.append(f"📉 RSI: {sig.get('rsi', '—')}")
         lines.append("")
 
         sell_reasons = [r for r in sig["reasons"] if "MÜÜA" in r]
@@ -364,41 +366,40 @@ def send_telegram(sig: dict, price_eur: float, change_24h: float) -> None:
             lines.append(f"  • {r}")
 
         if sell >= 4 and sell > buy:
-            lines.append("\n*MÜÜA KOHE!*")
+            lines.append("\n🚨 *MÜÜA KOHE!*")
             lines.append("_Mine Bybit → müü XRP_")
             lines.append("_Seejärel nupp.pyw → MÜÜA_")
         elif sell >= 2 and sell > buy:
-            lines.append("\nMüügisignaal kasvab — ole valmis müüma.")
+            lines.append("\n⚠️ Müügisignaal kasvab — ole valmis müüma.")
         else:
-            lines.append("\nHoia positsioon — müügisignaali pole.")
+            lines.append("\n✅ Hoia positsioon — müügisignaali pole.")
 
     # --- POSITSIOON SULETUD: otsime ostuhetke ---
     else:
-        change_icon = "+" if change_24h >= 0 else ""
-        lines.append(f"*XRP: {price_eur:.4f} EUR* ({change_icon}{change_24h:.2f}% 24h)")
+        lines.append(f"💵 *XRP: {price_eur:.4f} EUR* {change_arrow} {change_24h:+.2f}%")
         lines.append("\n━━━━━━━━━━━━━━━━━━━━━━")
-        lines.append("*Ootan ostuhetke...*\n")
+        lines.append("🔍 *Ootan ostuhetke...*\n")
 
         buy  = sig["buy"]
         sell = sig["sell"]
-        lines.append(f"Osta signaal: *{buy}* | Müüa signaal: {sell}")
-        lines.append(f"RSI: {sig.get('rsi', '—')}")
+        lines.append(f"📊 Osta signaal: *{buy}* | Müüa signaal: {sell}")
+        lines.append(f"📉 RSI: {sig.get('rsi', '—')}")
         lines.append("")
 
         for r in sig["reasons"]:
             lines.append(f"  • {r}")
 
         if buy >= 4 and buy > sell:
-            lines.append("\n*OSTA KOHE!*")
+            lines.append("\n🟢 *OSTA KOHE!*")
             lines.append("_Mine Bybit → osta XRP_")
             lines.append("_Seejärel nupp.pyw → OSTA_")
         elif buy >= 2 and buy > sell:
-            lines.append("\nOstuhetk läheneb — jälgi kinnitust.")
+            lines.append("\n⏳ Ostuhetk läheneb — jälgi kinnitust.")
         else:
-            lines.append("\nPole veel selget ostuhetke — oota.")
+            lines.append("\n⏸ Pole veel selget ostuhetke — oota.")
 
         if pos.get("sell_date"):
-            lines.append(f"\n_Eelmine tehing: {pos['sell_date']} | {pos.get('profit_eur', 0):+.2f} EUR ({pos.get('profit_pct', 0):+.1f}%)_")
+            lines.append(f"\n_📋 Eelmine tehing: {pos['sell_date']} | {pos.get('profit_eur', 0):+.2f} EUR ({pos.get('profit_pct', 0):+.1f}%)_")
 
     text = "\n".join(lines)
     url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
