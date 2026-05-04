@@ -95,8 +95,16 @@ def main():
         alerted = True
 
     # --- MÜÜGISIGNAAL hoiatus ---
+    # Tingimused müügihoiatuseks:
+    # 1. Müügisignaal piisavalt tugev (>= 3)
+    # 2. Kasum vähemalt 2% (ei müü nulli lähedal)
+    # 3. Ostusignaalid on kadunud (buy <= 1) — tõusutrend on lõppenud
     if sell >= ALERT_THRESHOLD and sell > buy:
-        if profit_pct >= MIN_PROFIT_PCT:
+        if profit_pct < MIN_PROFIT_PCT:
+            print(f"Müügisignaal {sell} aga kasum liiga väike ({profit_pct:.1f}%) — ootan tõusu.")
+        elif buy > 1:
+            print(f"Müügisignaal {sell} aga ostusignaal veel {buy} — tõusutrend kestab, ootan pöördumist.")
+        else:
             sell_reasons = [r for r in sig["reasons"] if "MÜÜA" in r]
             reasons_text = "\n".join(f"  • {r}" for r in sell_reasons)
 
@@ -113,10 +121,8 @@ def main():
                 f"_Seejärel vajuta nupp.pyw → MÜÜA_"
             )
             send_alert(alert)
-            print(f"Müügihoiatus saadetud! Müüa skoor: {sell}, P&L: {profit_pct:.1f}%")
+            print(f"Müügihoiatus saadetud! Müüa: {sell}, Osta: {buy}, P&L: {profit_pct:.1f}%")
             alerted = True
-        else:
-            print(f"Müügisignaal {sell} aga kasum liiga väike ({profit_pct:.1f}%) — ootan tõusu.")
 
     if not alerted:
         print(f"Pole hoiatusi (sell:{sell} buy:{buy} P&L:{profit_pct:.1f}%) — jätkan jälgimist.")
