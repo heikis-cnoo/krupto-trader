@@ -1,0 +1,29 @@
+name: Päeva Tõusjad
+
+on:
+  schedule:
+    - cron: '30 3 * * *'  # 06:30 Eesti aeg (UTC+3)
+  workflow_dispatch:        # käsitsi testimiseks
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Installi paketid
+        run: pip install -r susteem/requirements.txt
+
+      - name: Käivita scanner
+        env:
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
+          CI: true
+        run: python susteem/scanner.py
