@@ -12,9 +12,10 @@ from trader import get_ohlc, get_price, calculate_indicators, generate_signal
 from trader import TELEGRAM_TOKEN, TELEGRAM_CHAT_IDS, COINGECKO_API_KEY
 
 POSITION_FILE    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "position.json")
-ALERT_THRESHOLD  = 3  # saada hoiatus kui müüa skoor >= 3
+ALERT_THRESHOLD  = 3     # saada hoiatus kui müüa skoor >= 3
 STOP_LOSS_PCT    = -10.0  # stop-loss hoiatus kui kahjum >= 10%
 TAKE_PROFIT_PCT  =  20.0  # take-profit hoiatus kui kasum >= 20%
+MIN_PROFIT_PCT   =   2.0  # müügihoiatus ainult kui kasum >= 2% (väldi müüki nulli lähedal)
 
 def now_eesti():
     return (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M")
@@ -95,24 +96,27 @@ def main():
 
     # --- MÜÜGISIGNAAL hoiatus ---
     if sell >= ALERT_THRESHOLD and sell > buy:
-        sell_reasons = [r for r in sig["reasons"] if "MÜÜA" in r]
-        reasons_text = "\n".join(f"  • {r}" for r in sell_reasons)
+        if profit_pct >= MIN_PROFIT_PCT:
+            sell_reasons = [r for r in sig["reasons"] if "MÜÜA" in r]
+            reasons_text = "\n".join(f"  • {r}" for r in sell_reasons)
 
-        alert = (
-            f"🚨 *MÜÜGIHOIATUS — {now_eesti()}*\n\n"
-            f"💵 XRP hind: *{price_eur:.4f} EUR*\n"
-            f"📊 Müüa signaal: *{sell}* | Osta: {buy}\n\n"
-            f"📂 Sinu positsioon:\n"
-            f"  {pos['xrp_amount']:.2f} XRP @ {pos['buy_price_eur']:.4f} EUR\n"
-            f"  Praegune väärtus: {current_value:.2f} EUR\n"
-            f"  *{sign}{profit_eur:.2f} EUR ({sign}{profit_pct:.1f}%)*\n\n"
-            f"📉 Signaalid:\n{reasons_text}\n\n"
-            f"*Mine Bybit → müü XRP kohe!*\n"
-            f"_Seejärel vajuta nupp.pyw → MÜÜA_"
-        )
-        send_alert(alert)
-        print(f"Müügihoiatus saadetud! Müüa skoor: {sell}")
-        alerted = True
+            alert = (
+                f"🚨 *MÜÜGIHOIATUS — {now_eesti()}*\n\n"
+                f"💵 XRP hind: *{price_eur:.4f} EUR*\n"
+                f"📊 Müüa signaal: *{sell}* | Osta: {buy}\n\n"
+                f"📂 Sinu positsioon:\n"
+                f"  {pos['xrp_amount']:.2f} XRP @ {pos['buy_price_eur']:.4f} EUR\n"
+                f"  Praegune väärtus: {current_value:.2f} EUR\n"
+                f"  *{sign}{profit_eur:.2f} EUR ({sign}{profit_pct:.1f}%)*\n\n"
+                f"📉 Signaalid:\n{reasons_text}\n\n"
+                f"*Mine Bybit → müü XRP kohe!*\n"
+                f"_Seejärel vajuta nupp.pyw → MÜÜA_"
+            )
+            send_alert(alert)
+            print(f"Müügihoiatus saadetud! Müüa skoor: {sell}, P&L: {profit_pct:.1f}%")
+            alerted = True
+        else:
+            print(f"Müügisignaal {sell} aga kasum liiga väike ({profit_pct:.1f}%) — ootan tõusu.")
 
     if not alerted:
         print(f"Pole hoiatusi (sell:{sell} buy:{buy} P&L:{profit_pct:.1f}%) — jätkan jälgimist.")
