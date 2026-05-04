@@ -83,18 +83,22 @@ def get_ohlc(coin_id, days=30):
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
     return df.sort_values("timestamp").reset_index(drop=True)
 
-def calculate_buy_score(df, change_24h, change_7d):
-    """Arvuta ostusignaalide skoor — kõrgem = parem ostuhetk."""
+def calculate_bottom_score(df, change_24h, change_7d):
+    """
+    Otsi münte mis on PÕHJAS ja hakkavad pöörduma ülespoole.
+    Välistab mündid mis on juba tõusnud (RSI kõrge, hind tipus).
+    Kõrgem skoor = tugevam põhjapöördumise signaal.
+    """
     close = df["close"]
     score = 0
     reasons = []
+    warnings = []  # Miks münti EI soovitata
 
-    # RSI
-    rsi_series = ta.momentum.RSIIndicator(close, window=14).rsi()
-    rsi_now  = rsi_series.iloc[-1]
-    rsi_prev = rsi_series.iloc[-4]
+    # --- Indikaatorid ---
+    rsi_series  = ta.momentum.RSIIndicator(close, window=14).rsi()
+    rsi_now     = rsi_series.iloc[-1]
+    rsi_prev    = rsi_series.iloc[-4]
 
-    # MACD
     macd_obj    = ta.trend.MACD(close)
     macd_line   = macd_obj.macd()
     signal_line = macd_obj.macd_signal()
@@ -102,64 +106,96 @@ def calculate_buy_score(df, change_24h, change_7d):
     hist_now    = hist_series.iloc[-1]
     hist_prev   = hist_series.iloc[-3]
 
-    macd_bullish_cross = (macd_line.iloc[-2] < signal_line.iloc[-2]) and (macd_line.iloc[-1] >= signal_line.iloc[-1])
-
-    # MA
     ma20_series = ta.trend.SMAIndicator(close, window=20).sma_indicator()
     ma50_series = ta.trend.SMAIndicator(close, window=50).sma_indicator()
 
+    bb          = ta.volatility.BollingerBands(close, window=20, window_dev=2)
+    bb_upper    = bb.bollinger_hband().iloc[-1]
+    bb_lower    = bb.bollinger_lband().iloc[-1]
+    bb_mid      = bb.bollinger_mavg().iloc[-1]
+
+    prices_last_10 = close.iloc[-10:]
+    rsi_last_10    = rsi_series.iloc[-10:]
+
+    macd_bullish_cross = (macd_line.iloc[-2] < signal_line.iloc[-2]) and (macd_line.iloc[-1] >= signal_line.iloc[-1])
     price_crossed_above_ma20 = (close.iloc[-2] < ma20_series.iloc[-2]) and (close.iloc[-1] >= ma20_series.iloc[-1])
+
     golden_cross = False
     if len(ma50_series.dropna()) >= 2:
         golden_cross = (ma20_series.iloc[-2] < ma50_series.iloc[-2]) and (ma20_series.iloc[-1] >= ma50_series.iloc[-1])
 
-    # Bollinger
-    bb = ta.volatility.BollingerBands(close, window=20, window_dev=2)
-    bb_lower = bb.bollinger_lband().iloc[-1]
+    bullish_div = (
+        close.iloc[-1] < prices_last_10.min() * 1.005 and
+        rsi_series.iloc[-1] > rsi_last_10.min() * 1.05 and
+        rsi_now < 45
+    )
 
-    # Bullish divergents
-    prices_last_10 = close.iloc[-10:]
-    rsi_last_10    = rsi_series.iloc[-10:]
-    price_new_low  = close.iloc[-1] < prices_last_10.min() * 1.005
-    rsi_not_new_low = rsi_series.iloc[-1] > rsi_last_10.min() * 1.05
-    bullish_div = price_new_low and rsi_not_new_low and rsi_now < 45
+    # --- VÄLISTAMINE: münt on juba tõusu tipus ---
+    # RSI üle 60 = juba kallis, tõus käimas → ei soovita
+    if rsi_now > 60:
+        warnings.append(f"RSI {rsi_now:.0f} — juba tõusu piirkonnas, kaugel põhjast")
+        return -1, round(rsi_now, 1), warnings
 
-    # Punktid
-    if macd_bullish_cross:
-        score += 3
-        reasons.append("MACD ristus üles")
+    # Hind Bollinger üla riba lähedal = statistiliselt kallis
+    if close.iloc[-1] >= bb_upper * 0.95:
+        warnings.append("Hind Bollinger üla riba lähedal — tipp, mitte põhi")
+        return -1, round(rsi_now, 1), warnings
 
+    # 7 päeva +15% tõus = juba liikumas, hilineme
+    if change_7d is not None and change_7d > 15:
+        warnings.append(f"7p tõus {change_7d:.1f}% — juba tõusnud, võib olla hilja")
+        return -1, round(rsi_now, 1), warnings
+
+    # --- PÕHJA SIGNAALID (positiivsed punktid) ---
+
+    # 1. RSI oli sügaval ülemüüdud ja hakkab tõusma = klassikaline põhjapöördumine
     if rsi_prev < 32 and rsi_now > rsi_prev + 2:
-        score += 3
-        reasons.append(f"RSI tõuseb ülemüüdud tsoonist ({rsi_prev:.0f}→{rsi_now:.0f})")
+        score += 4
+        reasons.append(f"RSI tõuseb ülemüüdud tsoonist ({rsi_prev:.0f}→{rsi_now:.0f}) ⭐")
     elif rsi_now < 35 and rsi_now > rsi_prev:
-        score += 2
-        reasons.append(f"RSI {rsi_now:.0f} — ülemüüdud, tõuseb")
+        score += 3
+        reasons.append(f"RSI {rsi_now:.0f} — ülemüüdud, hakkab tõusma")
+    elif rsi_now < 45 and rsi_now > rsi_prev + 3:
+        score += 1
+        reasons.append(f"RSI {rsi_now:.0f} madal ja tõuseb")
 
+    # 2. MACD ristus ülespoole = langus lõppenud, tõus algab
+    if macd_bullish_cross:
+        score += 4
+        reasons.append("MACD ristus signaaljoone ÜLES ⭐")
+
+    # 3. MACD histogramm negatiivne aga paraneb = languse jõud nõrgeneb
+    if hist_now < 0 and hist_now > hist_prev:
+        score += 2
+        reasons.append("Languse momentum nõrgeneb — pöördumine tulemas")
+
+    # 4. Bullish divergents = hind langeb aga RSI ei lange = nõrk langus
     if bullish_div:
-        score += 2
-        reasons.append("Bullish divergents")
+        score += 3
+        reasons.append("Bullish divergents — hind langeb aga RSI mitte ⭐")
 
+    # 5. Hind Bollinger ala riba juures = statistiliselt odavaim tsoon
+    if close.iloc[-1] <= bb_lower * 1.02:
+        score += 2
+        reasons.append("Bollinger ala riba — ajalooliselt odav tsoon")
+
+    # 6. Hind ületas MA20 üles = esimene trendimuutuse kinnitus
     if price_crossed_above_ma20:
         score += 2
-        reasons.append("Hind ületas MA20 üles")
+        reasons.append("Hind ületas MA20 üles — trend pöördub")
 
+    # 7. Golden Cross = pikaajaline tugevuse kinnitus
     if golden_cross:
-        score += 3
+        score += 2
         reasons.append("Golden Cross (MA20 > MA50)")
 
-    if hist_now < 0 and hist_now > hist_prev:
+    # 8. Tugev langus + madal RSI = potentsiaalne põhi
+    if change_7d is not None and change_7d < -20 and rsi_now < 38:
+        score += 2
+        reasons.append(f"Tugevalt langenud ({change_7d:.1f}% 7p) + RSI {rsi_now:.0f} — põhi lähedal?")
+    elif change_7d is not None and change_7d < -10 and rsi_now < 42:
         score += 1
-        reasons.append("Languse momentum nõrgeneb")
-
-    if close.iloc[-1] <= bb_lower * 1.015:
-        score += 1
-        reasons.append("Bollinger ala riba — odav tsoon")
-
-    # 7 päeva trend — kui on langenud palju, võib põhi olla lähedal
-    if change_7d is not None and change_7d < -15 and rsi_now < 40:
-        score += 1
-        reasons.append(f"7p langus {change_7d:.1f}% + RSI madal — põhi lähedal?")
+        reasons.append(f"Langenud {change_7d:.1f}% (7p), RSI {rsi_now:.0f} — odavnenud")
 
     return score, round(rsi_now, 1), reasons
 
@@ -188,7 +224,7 @@ def analyze_all():
                 time.sleep(3)
                 continue
 
-            score, rsi, reasons = calculate_buy_score(df, change_24h, change_7d)
+            score, rsi, reasons = calculate_bottom_score(df, change_24h, change_7d)
 
             results.append({
                 "symbol":    symbol,
@@ -214,43 +250,58 @@ def send_telegram(results):
         print("Pole tulemusi saata.")
         return
 
-    # Sorteeri skoori järgi
-    results.sort(key=lambda x: x["score"], reverse=True)
-    top3 = [r for r in results if r["score"] >= 2][:3]
+    # Filtreeri välja välistatud mündid (skoor = -1) ja sorteeri
+    valid   = [r for r in results if r["score"] >= 2]
+    invalid = [r for r in results if r["score"] == -1]
+    valid.sort(key=lambda x: x["score"], reverse=True)
+    top3 = valid[:3]
 
     now = now_eesti()
     lines = [
-        f"🔍 *PÄEVA TÕUSJAD — {now}*",
-        f"_Bybit EU top soovitused täna_",
+        f"🌅 *PÄEVA TÕUSJAD — {now}*",
+        f"_Põhjas olevad mündid tõusupotentsiaaliga_",
         "━━━━━━━━━━━━━━━━━━━━━━\n",
     ]
 
     if not top3:
-        lines.append("⏸ Täna pole tugevaid ostusignaale.")
+        lines.append("⏸ Täna pole münte selges põhjapöördumises.")
         lines.append("_Turg vajab puhkust — oota homset analüüsi._")
     else:
         medals = ["🥇", "🥈", "🥉"]
         for idx, r in enumerate(top3):
-            medal = medals[idx] if idx < 3 else "▪️"
+            medal = medals[idx]
             change_icon = "📈" if r["change_24h"] >= 0 else "📉"
             lines.append(f"{medal} *{r['symbol']}*  —  skoor: {r['score']}")
             lines.append(f"   💵 {r['price']:.4f} EUR  {change_icon} {r['change_24h']:+.1f}% (24h)")
-            lines.append(f"   📊 RSI: {r['rsi']}")
+            if r.get("change_7d") is not None:
+                icon7 = "📈" if r["change_7d"] >= 0 else "📉"
+                lines.append(f"   {icon7} 7 päeva: {r['change_7d']:+.1f}%")
+            lines.append(f"   📊 RSI: {r['rsi']} — {'madal ✅' if r['rsi'] < 40 else 'normaalne'}")
             if r["reasons"]:
-                reasons_str = " · ".join(r["reasons"][:2])
-                lines.append(f"   ✅ {reasons_str}")
+                for reason in r["reasons"][:3]:
+                    lines.append(f"   • {reason}")
             lines.append("")
 
         lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-        lines.append("⚠️ _Signaalid on informatiivsed, mitte garanteeritud._")
-        lines.append("_Kasuta koos oma analüüsiga!_")
 
-    # Lisa ülejäänud top 5 lühidalt
-    rest = [r for r in results if r not in top3 and r["score"] >= 1][:5]
-    if rest:
-        lines.append("\n_Jälgi ka:_")
-        for r in rest:
-            lines.append(f"  • {r['symbol']}: skoor {r['score']}, RSI {r['rsi']}")
+    # Näita ka järgmisi kandidaate (skoor 1)
+    watch = [r for r in valid if r not in top3 and r["score"] >= 1][:4]
+    if watch:
+        lines.append("👀 *Jälgi ka:*")
+        for r in watch:
+            lines.append(f"  • {r['symbol']}: RSI {r['rsi']}, skoor {r['score']}")
+        lines.append("")
+
+    # Näita tippudes olevaid münte (välistatud)
+    topped = [r for r in invalid if r["reasons"]][:4]
+    if topped:
+        lines.append("🚫 *Välista praegu (liiga kõrgel):*")
+        for r in topped:
+            lines.append(f"  • {r['symbol']}: {r['reasons'][0]}")
+        lines.append("")
+
+    lines.append("⚠️ _Signaalid on informatiivsed, mitte garanteeritud._")
+    lines.append("_Kasuta koos oma analüüsiga!_")
 
     text = "\n".join(lines)
     url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
