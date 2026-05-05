@@ -2,7 +2,7 @@ name: Päeva Tõusjad
 
 on:
   schedule:
-    - cron: '30 3 * * *'  # 06:30 Eesti aeg (UTC+3)
+    - cron: '0 3 * * *'   # tahtaeg 06:00 Eesti aeg — GitHub viivitusega kohale ~06:00-07:30
   workflow_dispatch:        # käsitsi testimiseks
 
 jobs:
